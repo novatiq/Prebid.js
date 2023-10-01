@@ -128,11 +128,12 @@ describe('novatiqIdSystem', function () {
         novatiqId: 'snowflake',
         useStandardUuid: false,
         useSspId: true,
-        useSspHost: true
+        useSspHost: true,
+        syncTimeout: 50
       }
 
       const url = novatiqIdSubmodule.getSyncUrl(false, '', defaultUrlParams);
-      const response = novatiqIdSubmodule.sendAsyncSyncRequest('testuuid', url);
+      const response = novatiqIdSubmodule.sendAsyncSyncRequest('testuuid', url, defaultUrlParams);
       expect(response.callback).should.not.be.empty;
     });
   });

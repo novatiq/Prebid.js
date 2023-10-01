@@ -8,10 +8,17 @@
 import { logInfo, getWindowLocation } from '../src/utils.js';
 import { ajax } from '../src/ajax.js';
 import { submodule } from '../src/hook.js';
-import {getStorageManager} from '../src/storageManager.js';
-import {MODULE_TYPE_UID} from '../src/activities/modules.js';
+import { getStorageManager } from '../src/storageManager.js';
+import { MODULE_TYPE_UID } from '../src/activities/modules.js';
+import { config } from '../src/config.js';
 
 const MODULE_NAME = 'novatiq';
+
+// defaults
+const NOVATIQ_ID = 'snowflake';
+const STANDARD_UUID = false;
+const SSP_ID = true;
+const SSP_HOST = true;
 
 /** @type {Submodule} */
 export const novatiqIdSubmodule = {
@@ -80,7 +87,7 @@ export const novatiqIdSubmodule = {
     const sharedStatus = (sharedId != undefined && sharedId != false) ? 'Found' : 'Not Found';
 
     if (useCallbacks) {
-      let res = this.sendAsyncSyncRequest(novatiqId, url); ;
+      let res = this.sendAsyncSyncRequest(novatiqId, url, urlParams); ;
       res.sharedStatus = sharedStatus;
 
       return res;
@@ -92,18 +99,39 @@ export const novatiqIdSubmodule = {
     }
   },
 
-  sendAsyncSyncRequest(novatiqId, url) {
+  sendAsyncSyncRequest(novatiqId, url, urlParams) {
     logInfo('NOVATIQ Setting up ASYNC sync request');
 
-    const resp = function (callback) {
-      logInfo('NOVATIQ *** Calling ASYNC sync request');
+    const mConfig = config.getConfig();
 
+    let syncTimeout = 0;
+    var timeoutID = '';
+
+    // auctionDelay is not set while testing
+    if (mConfig.userSync != undefined && mConfig.userSync.auctionDelay != undefined) {
+      syncTimeout = mConfig.userSync.auctionDelay;
+    }
+
+    // is the sync timeout overriden?
+    if (urlParams.syncTimeout > 0) {
+      syncTimeout = urlParams.syncTimeout;
+    }
+
+    logInfo('NOVATIQ aync timeout is: ' + syncTimeout);
+
+    // response function start
+    const resp = function (prebidCallback) {
+      let timeoutCalled = false;
+
+      logInfo('NOVATIQ *** Calling ASYNC sync request');
       function onSuccess(response, responseObj) {
         let syncrc;
         var novatiqIdJson = { syncResponse: 0 };
         syncrc = responseObj.status;
+
         logInfo('NOVATIQ Sync Response Code:' + syncrc);
         logInfo('NOVATIQ *** ASYNC request returned ' + syncrc);
+
         if (syncrc === 200) {
           novatiqIdJson = { 'id': novatiqId, syncResponse: 1 };
         } else {
@@ -111,12 +139,35 @@ export const novatiqIdSubmodule = {
             novatiqIdJson = { 'id': novatiqId, syncResponse: 2 };
           }
         }
-        callback(novatiqIdJson);
+        // callback function end
+
+        if (!timeoutCalled) {
+          clearTimeout(timeoutID);
+
+          logInfo('NOVATIQ Callback called prebid callback, cancelled timer');
+
+          prebidCallback(novatiqIdJson);
+        } else {
+          logInfo('NOVATIQ Callback not calling prebid callback, timeout already called');
+        }
       }
+
+      logInfo('NOVATIQ About to make sync response');
 
       ajax(url,
         { success: onSuccess },
         undefined, { method: 'GET', withCredentials: false });
+
+      logInfo('NOVATIQ sync response function called');
+
+      logInfo('NOVATIQ setting up timer');
+
+      timeoutID = setTimeout(() => {
+        logInfo('NOVATIQ timeout called, returning early with hyperID');
+        timeoutCalled = true;
+
+        prebidCallback({ 'id': novatiqId, syncResponse: 1 })
+      }, syncTimeout);
     }
 
     return {callback: resp};
@@ -171,11 +222,12 @@ export const novatiqIdSubmodule = {
   },
 
   getUrlParams(configParams) {
+    // default params
     let urlParams = {
-      novatiqId: 'snowflake',
-      useStandardUuid: false,
-      useSspId: true,
-      useSspHost: true
+      novatiqId: NOVATIQ_ID,
+      useStandardUuid: STANDARD_UUID,
+      useSspId: SSP_ID,
+      useSspHost: SSP_HOST
     }
 
     if (typeof configParams.urlParams != 'undefined') {
@@ -190,6 +242,9 @@ export const novatiqIdSubmodule = {
       }
       if (configParams.urlParams.useSspHost != undefined) {
         urlParams.useSspHost = configParams.urlParams.useSspHost;
+      }
+      if (configParams.urlParams.syncTimeout != undefined) {
+        urlParams.syncTimeout = configParams.urlParams.syncTimeout;
       }
     }
 
@@ -218,6 +273,7 @@ export const novatiqIdSubmodule = {
   // return null if we aren't supposed to use one or we are but there isn't one present
   getSharedId(configParams) {
     let sharedId = null;
+
     if (this.useSharedId(configParams)) {
       let cookieOrStorageID = this.getCookieOrStorageID(configParams);
       const storage = getStorageManager({moduleType: MODULE_TYPE_UID, moduleName: MODULE_NAME});
@@ -260,6 +316,7 @@ export const novatiqIdSubmodule = {
     }
     return srcId;
   },
+
   eids: {
     'novatiq': {
       getValue: function(data) {
