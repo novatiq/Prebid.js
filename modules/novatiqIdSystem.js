@@ -110,6 +110,9 @@ export const novatiqIdSubmodule = {
     // auctionDelay is not set while testing
     if (mConfig.userSync != undefined && mConfig.userSync.auctionDelay != undefined) {
       syncTimeout = mConfig.userSync.auctionDelay;
+      if (syncTimeout > 10) {
+        syncTimeout -= 10;
+      }
     }
 
     // is the sync timeout overriden?
